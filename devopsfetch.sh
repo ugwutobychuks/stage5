@@ -1,103 +1,97 @@
 #!/bin/bash
 
-# Help function
-function display_help() {
-    echo "Usage: $0 [option] [argument]"
-    echo
-    echo "Options:"
-    echo "  -p, --port [port_number]    Display active ports and services or details for a specific port."
-    echo "  -d, --docker [container_name]    List Docker images and containers or details for a specific container."
-    echo "  -n, --nginx [domain]    Display Nginx domains and ports or details for a specific domain."
-    echo "  -u, --users [username]    List users and their last login times or details for a specific user."
-    echo "  -t, --time [time_range]    Display activities within a specified time range."
-    echo "  -h, --help    Display this help message."
-    echo
+LOG_FILE="/var/log/devopsfetch.log"
+
+# Function Definitions
+
+function list_ports {
+  echo "Active Ports and Services:"
+  sudo netstat -tuln | awk 'NR>2 {print $1, $4}' | column -t
 }
 
-# Display active ports and services
-function display_ports() {
-    if [ -z "$1" ]; then
-        ss -tuln | awk 'NR>1 {print $1, $4}' | column -t
-    else
-        ss -tuln | grep ":$1 "
-    fi
+function port_details {
+  local port=$1
+  echo "Details for port $port:"
+  sudo lsof -i :$port
 }
 
-# List Docker images and containers
-function display_docker() {
-    if [ -z "$1" ]; then
-        docker ps -a --format "table {{.Names}}\t{{.Image}}\t{{.Status}}" && docker images --format "table {{.Repository}}\t{{.Tag}}\t{{.ID}}"
-    else
-        docker inspect $1
-    fi
+function list_docker {
+  echo "Docker Images and Containers:"
+  docker ps -a --format "table {{.Names}}\t{{.Image}}\t{{.Status}}"
 }
 
-# Display Nginx domains and ports
-function display_nginx() {
-    if [ -z "$1" ]; then
-        grep -E 'server_name|listen' /etc/nginx/sites-available/* | sed 'N;s/\n/ /' | awk '{print $1, $2, $3}' | column -t
-    else
-        grep -A 10 "server_name $1" /etc/nginx/sites-available/*
-    fi
+function container_details {
+  local container=$1
+  echo "Details for container $container:"
+  docker inspect $container
 }
 
-# List users and their last login times
-function display_users() {
-    if [ -z "$1" ]; then
-        lastlog | awk '{print $1, $3, $4, $5, $6, $7, $8}' | column -t
-    else
-        lastlog -u $1
-    fi
+function list_nginx {
+  echo "Nginx Domains and Ports:"
+  sudo nginx -T 2>/dev/null | grep -E "server_name|listen" | awk '{print $2}' | paste - - | column -t
 }
 
-# Display activities within a specified time range
-function display_time_range() {
-    journalctl --since "$1" --no-pager
+function domain_details {
+  local domain=$1
+  echo "Details for domain $domain:"
+  sudo nginx -T 2>/dev/null | awk -v domain=$domain '/server_name/ {if ($2 == domain) {found=1}} found && /}/ {print; found=0} found'
 }
 
-# Main script logic
-if [[ $# -eq 0 ]]; then
-    display_help
-    exit 1
+function list_users {
+  echo "Users and Last Login Times:"
+  lastlog | column -t
+}
+
+function user_details {
+  local user=$1
+  echo "Details for user $user:"
+  last $user
+}
+
+function activities_in_time_range {
+  local time_range=$1
+  echo "Activities in the last $time_range:"
+  sudo journalctl --since "$time_range ago" | tail -n 100
+}
+
+# Command Handling
+
+if [[ $1 == "-p" ]]; then
+  if [[ -z $2 ]]; then
+    list_ports
+  else
+    port_details $2
+  fi
+elif [[ $1 == "-d" ]]; then
+  if [[ -z $2 ]]; then
+    list_docker
+  else
+    container_details $2
+  fi
+elif [[ $1 == "-n" ]]; then
+  if [[ -z $2 ]]; then
+    list_nginx
+  else
+    domain_details $2
+  fi
+elif [[ $1 == "-u" ]]; then
+  if [[ -z $2 ]]; then
+    list_users
+  else
+    user_details $2
+  fi
+elif [[ $1 == "-t" ]]; then
+  activities_in_time_range $2
+else
+  echo "Usage: $0 {-p|--port [port]} {-d|--docker [container]} {-n|--nginx [domain]} {-u|--users [username]} {-t|--time [time_range]}"
 fi
 
-while [[ $# -gt 0 ]]
-do
-    key="$1"
-
-    case $key in
-        -p|--port)
-        display_ports "$2"
-        shift
-        shift
-        ;;
-        -d|--docker)
-        display_docker "$2"
-        shift
-        shift
-        ;;
-        -n|--nginx)
-        display_nginx "$2"
-        shift
-        shift
-        ;;
-        -u|--users)
-        display_users "$2"
-        shift
-        shift
-        ;;
-        -t|--time)
-        display_time_range "$2"
-        shift
-        shift
-        ;;
-        -h|--help)
-        display_help
-        exit 0
-        ;;
-        *)
-        display_help
-        exit 1
-        ;;
-    esac
+# Continuous Monitoring Mode
+while true; do
+  echo "----- $(date) -----" >> $LOG_FILE
+  list_ports >> $LOG_FILE
+  list_docker >> $LOG_FILE
+  list_nginx >> $LOG_FILE
+  list_users >> $LOG_FILE
+  sleep 3600  # Run every hour
 done
