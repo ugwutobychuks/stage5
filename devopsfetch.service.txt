@@ -1,0 +1,40 @@
+  GNU nano 2.9.3   devopsfetch.service
+[Unit]
+Description=DevOpsFetch Monitoring Service
+
+[Service]
+ExecStart=/usr/local/bin/devopsfetch.sh -p
+Restart=always
+User=root
+
+[Install]
+WantedBy=multi-user.target
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+                 [ Read 11 lines ]
+^G Get Help ^O Write Out^W Where Is ^K Cut Text
+^X Exit     ^R Read File^\ Replace  ^U Uncut Text
