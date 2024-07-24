@@ -1,0 +1,220 @@
+Devopsfetch Documentation
+Overview
+devopsfetch is a tool designed for server information retrieval and monitoring. It collects and displays system information such as active ports, user logins, Nginx configurations, Docker images, and container statuses. Additionally, it includes a systemd service to monitor and log these activities continuously.
+Installation and Configuration
+Prerequisites
+Ensure your system is up-to-date:
+bash
+
+sudo apt-get update
+sudo apt-get upgrade -y
+Installation Steps
+1.	Download and Save the Scripts
+Save the main script as /usr/local/bin/devopsfetch.sh:
+bash
+
+sudo nano /usr/local/bin/devopsfetch.sh
+Paste the following content into the file:
+bash
+
+#!/bin/bash
+
+LOG_FILE="/var/log/devopsfetch.log"
+
+# Function Definitions
+
+function list_ports {
+  echo "Active Ports and Services:"
+  sudo netstat -tuln | awk 'NR>2 {print $1, $4}' | column -t
+}
+
+function port_details {
+  local port=$1
+  echo "Details for port $port:"
+  sudo lsof -i :$port
+}
+
+function list_docker {
+  echo "Docker Images and Containers:"
+  docker ps -a --format "table {{.Names}}\t{{.Image}}\t{{.Status}}"
+}
+
+function container_details {
+  local container=$1
+  echo "Details for container $container:"
+  docker inspect $container
+}
+
+function list_nginx {
+  echo "Nginx Domains and Ports:"
+  sudo nginx -T 2>/dev/null | grep -E "server_name|listen" | awk '{print $2}' | paste - - | column -t
+}
+
+function domain_details {
+  local domain=$1
+  echo "Details for domain $domain:"
+  sudo nginx -T 2>/dev/null | awk -v domain=$domain '/server_name/ {if ($2 == domain) {found=1}} found && /}/ {print; found=0} found'
+}
+
+function list_users {
+  echo "Users and Last Login Times:"
+  lastlog | column -t
+}
+
+function user_details {
+  local user=$1
+  echo "Details for user $user:"
+  last $user
+}
+
+function activities_in_time_range {
+  local time_range=$1
+  echo "Activities in the last $time_range:"
+  sudo journalctl --since "$time_range ago" | tail -n 100
+}
+
+# Command Handling
+
+if [[ $1 == "-p" ]]; then
+  if [[ -z $2 ]]; then
+    list_ports
+  else
+    port_details $2
+  fi
+elif [[ $1 == "-d" ]]; then
+  if [[ -z $2 ]]; then
+    list_docker
+  else
+    container_details $2
+  fi
+elif [[ $1 == "-n" ]]; then
+  if [[ -z $2 ]]; then
+    list_nginx
+  else
+    domain_details $2
+  fi
+elif [[ $1 == "-u" ]]; then
+  if [[ -z $2 ]]; then
+    list_users
+  else
+    user_details $2
+  fi
+elif [[ $1 == "-t" ]]; then
+  activities_in_time_range $2
+else
+  echo "Usage: $0 {-p|--port [port]} {-d|--docker [container]} {-n|--nginx [domain]} {-u|--users [username]} {-t|--time [time_range]}"
+fi
+
+# Continuous Monitoring Mode
+while true; do
+  echo "----- $(date) -----" >> $LOG_FILE
+  list_ports >> $LOG_FILE
+  list_docker >> $LOG_FILE
+  list_nginx >> $LOG_FILE
+  list_users >> $LOG_FILE
+  sleep 3600  # Run every hour
+done
+Make the script executable:
+bash
+
+sudo chmod +x /usr/local/bin/devopsfetch.sh
+2.	Create the Installation Script
+Save the following script as install_devopsfetch.sh:
+bash
+
+sudo nano install_devopsfetch.sh
+Paste the following content into the file:
+bash
+
+#!/bin/bash
+
+# Install dependencies
+sudo apt-get update
+sudo apt-get install -y net-tools docker.io nginx
+
+# Create systemd service for devopsfetch
+cat <<EOF | sudo tee /etc/systemd/system/devopsfetch.service
+[Unit]
+Description=Devopsfetch Service
+
+[Service]
+ExecStart=/usr/local/bin/devopsfetch.sh
+Restart=always
+
+[Install]
+WantedBy=multi-user.target
+EOF
+
+# Reload systemd and enable the service
+sudo systemctl daemon-reload
+sudo systemctl enable devopsfetch.service
+sudo systemctl start devopsfetch.service
+
+# Setup log rotation
+cat <<EOF | sudo tee /etc/logrotate.d/devopsfetch
+/var/log/devopsfetch.log {
+  daily
+  rotate 7
+  compress
+  missingok
+  notifempty
+}
+EOF
+
+echo "Installation completed. Devopsfetch service is now running."
+Make the script executable:
+bash
+
+chmod +x install_devopsfetch.sh
+3.	Run the Installation Script
+Execute the installation script to install dependencies, create the systemd service, and set up log rotation:
+bash
+
+sudo ./install_devopsfetch.sh
+Usage
+Command-Line Flags
+•	List Active Ports and Services
+bash
+
+sudo /usr/local/bin/devopsfetch.sh -p
+•	Get Detailed Information About a Specific Port
+bash
+
+sudo /usr/local/bin/devopsfetch.sh -p <port_number>
+•	List Docker Images and Containers
+bash
+
+sudo /usr/local/bin/devopsfetch.sh -d
+•	Get Detailed Information About a Specific Docker Container
+bash
+
+sudo /usr/local/bin/devopsfetch.sh -d <container_name>
+•	List Nginx Domains and Their Ports
+bash
+
+sudo /usr/local/bin/devopsfetch.sh -n
+•	Get Detailed Configuration Information for a Specific Domain
+bash
+
+sudo /usr/local/bin/devopsfetch.sh -n <domain>
+•	List All Users and Their Last Login Times
+bash
+
+sudo /usr/local/bin/devopsfetch.sh -u
+•	Get Detailed Information About a Specific User
+bash
+
+sudo /usr/local/bin/devopsfetch.sh -u <username>
+•	Display Activities Within a Specified Time Range
+bash
+
+sudo /usr/local/bin/devopsfetch.sh -t "1 hour"
+Logging Mechanism
+The devopsfetch tool includes a continuous monitoring mode that logs activities every hour. The log file is located at /var/log/devopsfetch.log.
+Retrieve Logs
+To view the latest log entries, use the following command:
+bash
+                
+sudo tail -f /var/log/devopsfetch.log
+This will display the log file's contents in real-time, allowing you to monitor the server activities as they are logged.
+
