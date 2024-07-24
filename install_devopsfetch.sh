@@ -1,30 +1,36 @@
 #!/bin/bash
 
-# Install necessary dependencies
-apt-get update
-apt-get install -y docker.io nginx
+# Install dependencies
+sudo apt-get update
+sudo apt-get install -y net-tools docker.io nginx
 
-# Copy devopsfetch script to /usr/local/bin
-cp devopsfetch.sh /usr/local/bin/devopsfetch
-chmod +x /usr/local/bin/devopsfetch
-
-# Create systemd service file
-cat <<EOF >/etc/systemd/system/devopsfetch.service
+# Create systemd service for devopsfetch
+cat <<EOF | sudo tee /etc/systemd/system/devopsfetch.service
 [Unit]
-Description=DevOpsFetch Monitoring Service
+Description=Devopsfetch Service
 
 [Service]
-ExecStart=/usr/local/bin/devopsfetch -p
+ExecStart=/usr/local/bin/devopsfetch.sh
 Restart=always
-User=root
 
 [Install]
 WantedBy=multi-user.target
 EOF
 
 # Reload systemd and enable the service
-systemctl daemon-reload
-systemctl enable devopsfetch.service
-systemctl start devopsfetch.service
+sudo systemctl daemon-reload
+sudo systemctl enable devopsfetch.service
+sudo systemctl start devopsfetch.service
 
-echo "DevOpsFetch installed and service started."
+# Setup log rotation
+cat <<EOF | sudo tee /etc/logrotate.d/devopsfetch
+/var/log/devopsfetch.log {
+  daily
+  rotate 7
+  compress
+  missingok
+  notifempty
+}
+EOF
+
+echo "Installation completed. Devopsfetch service is now running."
